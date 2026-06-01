@@ -115,6 +115,36 @@ jobs:
             https://android.googlesource.com/platform/prebuilts/ninja/linux-arm64 \
             prebuilts/ninja/linux-arm64
 
+      - name: Create Compatibility Symlinks & Hermetic Path wrappers
+        working-directory: workspace
+        run: |
+          echo "=== Setting up prebuilts architecture fallback symlinks ==="
+          # Point linux-x86 requests natively to the linux-arm64 prebuilt folders we cloned
+          mkdir -p prebuilts/clang/host
+          ln -sf linux-arm64 prebuilts/clang/host/linux-x86
+          
+          mkdir -p prebuilts/cmake
+          ln -sf linux-arm64 prebuilts/cmake/linux-x86
+          
+          mkdir -p prebuilts/python
+          ln -sf linux-arm64 prebuilts/python/linux-x86
+          
+          mkdir -p prebuilts/ninja
+          ln -sf linux-arm64 prebuilts/ninja/linux-x86
+
+          echo "=== Generating Mock Hermetic Build-Tools for python3 and shell utilities ==="
+          # Creates simulated hermetic folders so that get_host_tag() finds native system utilities
+          mkdir -p prebuilts/build-tools/path/linux-x86
+          mkdir -p prebuilts/build-tools/path/linux-arm64
+          
+          for tool in python3 python awk cat cp sed touch uname tar zip unzip make bison flex m4 ninja cmake clang lld; do
+            TOOL_PATH=$(which $tool)
+            if [ ! -z "$TOOL_PATH" ]; then
+              ln -sf $TOOL_PATH prebuilts/build-tools/path/linux-x86/$tool
+              ln -sf $TOOL_PATH prebuilts/build-tools/path/linux-arm64/$tool
+            fi
+          done
+
       - name: Inject NDK r29 & Platform SDK 35 via SDK Manager
         working-directory: workspace
         run: |
