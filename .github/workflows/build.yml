@@ -3,10 +3,10 @@ name: Build Custom Android Clang (LLVM - ARM64 Host)
 on:
   workflow_dispatch:
     inputs:
-      llvm_version:
-        description: 'Upstream LLVM Release Version (e.g., 19.1.0, 22.1.6)'
+      llvm_commit:
+        description: 'Specific LLVM Commit Hash (from android.googlesource.com/toolchain/llvm-project)'
         required: true
-        default: '19.1.0'
+        default: '37f38d1f3276b62fba09462ab4807dce846c732d'
       targets:
         description: 'LLVM Target Architectures (semicolon-separated)'
         required: true
@@ -150,6 +150,21 @@ jobs:
           done
           set -e
 
+      - name: Inject AOSP Dependency Repositories & Sysroot
+        working-directory: workspace
+        run: |
+          # 1. Clone lightweight external mirrors for zstd and libxml2
+          echo "=== Cloning External Dependencies ==="
+          mkdir -p external
+          git clone --depth 1 https://android.googlesource.com/platform/external/zstd external/zstd
+          git clone --depth 1 https://android.googlesource.com/platform/external/libxml2 external/libxml2
+          
+          # 2. Redirect expected glibc sysroot compile queries directly to the native host sysroot
+          echo "=== Setting up Native Sysroot Redirection ==="
+          mkdir -p prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8
+          rm -rf prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot
+          ln -sf / prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot
+
       - name: Inject NDK r29 & Platform SDK 35 via SDK Manager
         working-directory: workspace
         run: |
@@ -240,24 +255,34 @@ jobs:
                               fh.write(content)
           "
 
-      - name: Inject Upstream LLVM Source Tarball
+      - name: Inject Custom LLVM Source Git Repo
         working-directory: workspace
         run: |
+          echo "=== Initializing LLVM-Project Repo ==="
           mkdir -p toolchain/llvm-project
-          echo "Downloading LLVM Source version: ${{ github.event.inputs.llvm_version }}"
-          curl -L "https://github.com/llvm/llvm-project/releases/download/llvmorg-${{ github.event.inputs.llvm_version }}/llvm-project-${{ github.event.inputs.llvm_version }}.src.tar.xz" | tar -xJ --strip-components=1 -C toolchain/llvm-project
+          cd toolchain/llvm-project
+          git init
+          
+          # Link the Google source remote
+          git remote add origin https://android.googlesource.com/toolchain/llvm-project
+          
+          # Fetch only the single specified commit (depth 1) to conserve CI storage
+          echo "=== Fetching specified commit: ${{ github.event.inputs.llvm_commit }} ==="
+          git fetch --depth 1 origin ${{ github.event.inputs.llvm_commit }}
+          git checkout FETCH_HEAD
 
       - name: Compile Custom Android Clang Toolchain (ARM64 Host)
         working-directory: workspace
         run: |
-          # --skip-source-setup bypasses the automatic gerrit repository syncing.
-          # --skip-apply-patches prevents Google's downstream AOSP patches from throwing errors on upstream release code.
-          BUILD_FLAGS="--skip-source-setup --skip-apply-patches --no-build windows --skip-tests"
+          # Both --skip-source-setup and --skip-apply-patches are OMITTED.
+          # This triggers do_build.py to run the default source setup and apply 
+          # all of Google's critical Android patches on top of your checked-out commit.
+          BUILD_FLAGS="--no-build windows --skip-tests"
           if [ "${{ github.event.inputs.enable_lto }}" = "true" ]; then
             BUILD_FLAGS="$BUILD_FLAGS --lto"
           fi
           
-          # Execute compile targeting specified runtime ABIs
+          # Run compilation using the native configuration parameters
           python3 toolchain/llvm_android/build.py $BUILD_FLAGS
 
       - name: Locate, Strip, and Package the Toolchain
@@ -281,7 +306,7 @@ jobs:
           find "$BUILD_OUT/bin" "$BUILD_OUT/lib" -type f \( -name "clang*" -o -name "*.so" -o -name "*.a" \) -exec strip --strip-unneeded {} + 2>/dev/null || true
           
           # Package final tarball
-          ARCHIVE_NAME="android-clang-arm64-custom-${{ github.event.inputs.llvm_version }}.tar.xz"
+          ARCHIVE_NAME="android-clang-arm64-custom-${{ github.event.inputs.llvm_commit }}.tar.xz"
           tar -cJf "$ARCHIVE_NAME" -C "$(dirname "$BUILD_OUT")" "$(basename "$BUILD_OUT")"
           
           # Safely register variables into the step's GITHUB_OUTPUT context
