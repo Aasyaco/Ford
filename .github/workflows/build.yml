@@ -120,16 +120,18 @@ jobs:
         run: |
           echo "=== Setting up prebuilts architecture fallback symlinks ==="
           # Point linux-x86 requests natively to the linux-arm64 prebuilt folders we cloned
+          # Clear any existing directories first to ensure symlinks are clean (not nested)
           mkdir -p prebuilts/clang/host
+          rm -rf prebuilts/clang/host/linux-x86
           ln -sf linux-arm64 prebuilts/clang/host/linux-x86
           
-          mkdir -p prebuilts/cmake
+          rm -rf prebuilts/cmake/linux-x86
           ln -sf linux-arm64 prebuilts/cmake/linux-x86
           
-          mkdir -p prebuilts/python
+          rm -rf prebuilts/python/linux-x86
           ln -sf linux-arm64 prebuilts/python/linux-x86
           
-          mkdir -p prebuilts/ninja
+          rm -rf prebuilts/ninja/linux-x86
           ln -sf linux-arm64 prebuilts/ninja/linux-x86
 
           echo "=== Generating Mock Hermetic Build-Tools for python3 and shell utilities ==="
@@ -137,13 +139,16 @@ jobs:
           mkdir -p prebuilts/build-tools/path/linux-x86
           mkdir -p prebuilts/build-tools/path/linux-arm64
           
+          # Temporarily disable exit-on-error (set -e) because command -v/which can return non-zero for missing tools
+          set +e
           for tool in python3 python awk cat cp sed touch uname tar zip unzip make bison flex m4 ninja cmake clang lld; do
-            TOOL_PATH=$(which $tool)
-            if [ ! -z "$TOOL_PATH" ]; then
-              ln -sf $TOOL_PATH prebuilts/build-tools/path/linux-x86/$tool
-              ln -sf $TOOL_PATH prebuilts/build-tools/path/linux-arm64/$tool
+            TOOL_PATH=$(command -v "$tool")
+            if [ -n "$TOOL_PATH" ]; then
+              ln -sf "$TOOL_PATH" prebuilts/build-tools/path/linux-x86/$tool
+              ln -sf "$TOOL_PATH" prebuilts/build-tools/path/linux-arm64/$tool
             fi
           done
+          set -e
 
       - name: Inject NDK r29 & Platform SDK 35 via SDK Manager
         working-directory: workspace
@@ -174,6 +179,7 @@ jobs:
           mkdir -p prebuilts/ndk
           mv android-sdk/ndk/29.0.14206865 prebuilts/ndk/r29
           
+          # Ensure target directory structure exists cleanly
           echo "=== Mapping SDK 35 to AOSP prebuilts directory ==="
           mkdir -p prebuilts/sdk/35/public
           cp android-sdk/platforms/android-35/android.jar prebuilts/sdk/35/public/android.jar
