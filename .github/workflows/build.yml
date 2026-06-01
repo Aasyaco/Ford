@@ -250,8 +250,9 @@ jobs:
       - name: Compile Custom Android Clang Toolchain (ARM64 Host)
         working-directory: workspace
         run: |
-          # Build target parameters defined for maximum speed and minimum storage space
-          BUILD_FLAGS="--no-update --no-build windows --skip-tests"
+          # --skip-source-setup bypasses the automatic gerrit repository syncing.
+          # --skip-apply-patches prevents Google's downstream AOSP patches from throwing errors on upstream release code.
+          BUILD_FLAGS="--skip-source-setup --skip-apply-patches --no-build windows --skip-tests"
           if [ "${{ github.event.inputs.enable_lto }}" = "true" ]; then
             BUILD_FLAGS="$BUILD_FLAGS --lto"
           fi
