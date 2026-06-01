@@ -75,33 +75,85 @@ jobs:
             https://android.googlesource.com/toolchain/llvm_android \
             workspace/toolchain/llvm_android
 
-      - name: Inject Custom Linux-ARM64 Google Prebuilts
+      - name: Setup Layout & Sync Android Build Scripts
+        run: |
+          # Recreate layout directories (git clone will populate the actual targets)
+          mkdir -p workspace/toolchain
+          mkdir -p workspace/prebuilts
+          
+          # Clone ONLY the main branch of Google's llvm_android repository
+          git clone \
+            --branch main \
+            --single-branch \
+            --depth 1 \
+            https://android.googlesource.com/toolchain/llvm_android \
+            workspace/toolchain/llvm_android
+
+      - name: Inject Custom Linux-ARM64 Google Prebuilts via Git Clone
         working-directory: workspace
         run: |
-          # 1. Fetch native ARM64 Clang-r596125 Bootstrap Compiler
-          echo "=== Fetching Clang-r596125 (ARM64) ==="
-          curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-arm64/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r596125.tar.gz" -o clang.tar.gz
-          mkdir -p prebuilts/clang/host/linux-arm64/clang-r596125
-          tar -xzf clang.tar.gz -C prebuilts/clang/host/linux-arm64/clang-r596125
-          rm clang.tar.gz
+          # 1. Sparse Clone the Clang Prebuilt Repo to only pull clang-r596125
+          echo "=== Cloning Clang-r596125 (ARM64) ==="
+          git clone \
+            --depth 1 \
+            --filter=blob:none \
+            --sparse \
+            --branch mirror-goog-main-llvm-toolchain-source \
+            https://android.googlesource.com/platform/prebuilts/clang/host/linux-arm64 \
+            prebuilts/clang/host/linux-arm64
+          
+          cd prebuilts/clang/host/linux-arm64
+          git sparse-checkout set clang-r596125
+          cd ../../../..
 
-          # 2. Fetch Native ARM64 CMake
-          echo "=== Fetching CMake (ARM64) ==="
-          curl -L "https://android.googlesource.com/platform/prebuilts/cmake/linux-arm64/+archive/refs/heads/mirror-goog-main-prebuilts.tar.gz" -o cmake.tar.gz
-          tar -xzf cmake.tar.gz -C prebuilts/cmake/linux-arm64
-          rm cmake.tar.gz
+          # 2. Shallow Clone CMake (ARM64)
+          echo "=== Cloning CMake (ARM64) ==="
+          git clone \
+            --depth 1 \
+            --branch mirror-goog-main-prebuilts \
+            https://android.googlesource.com/platform/prebuilts/cmake/linux-arm64 \
+            prebuilts/cmake/linux-arm64
 
-          # 3. Fetch Native ARM64 Python
-          echo "=== Fetching Python (ARM64) ==="
-          curl -L "https://android.googlesource.com/platform/prebuilts/python/linux-arm64/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source.tar.gz" -o python.tar.gz
-          tar -xzf python.tar.gz -C prebuilts/python/linux-arm64
-          rm python.tar.gz
+          # 3. Shallow Clone Python (ARM64)
+          echo "=== Cloning Python (ARM64) ==="
+          git clone \
+            --depth 1 \
+            --branch mirror-goog-main-llvm-toolchain-source \
+            https://android.googlesource.com/platform/prebuilts/python/linux-arm64 \
+            prebuilts/python/linux-arm64
 
-          # 4. Fetch Native ARM64 Ninja
-          echo "=== Fetching Ninja (ARM64) ==="
-          curl -L "https://android.googlesource.com/platform/prebuilts/ninja/linux-arm64/+archive/refs/heads/mirror-goog-main-prebuilts.tar.gz" -o ninja.tar.gz
-          tar -xzf ninja.tar.gz -C prebuilts/ninja/linux-arm64
-          rm ninja.tar.gz
+          # 4. Shallow Clone Ninja (ARM64)
+          echo "=== Cloning Ninja (ARM64) ==="
+          git clone \
+            --depth 1 \
+            --branch mirror-goog-main-prebuilts \
+            https://android.googlesource.com/platform/prebuilts/ninja/linux-arm64 \
+            prebuilts/ninja/linux-arm64
+
+      - name: Inject NDK r29 & Platform SDK 35 via Git Clone
+        working-directory: workspace
+        run: |
+          # 1. Sparse Clone the massive SDK repository to only download SDK 35 files
+          echo "=== Cloning Platform SDK 35 ==="
+          git clone \
+            --depth 1 \
+            --filter=blob:none \
+            --sparse \
+            --branch main \
+            https://android.googlesource.com/platform/prebuilts/sdk \
+            prebuilts/sdk
+          
+          cd prebuilts/sdk
+          git sparse-checkout set 35
+          cd ../..
+
+          # 2. Download and unpack official NDK r29
+          echo "=== Downloading NDK r29 ==="
+          curl -L "https://dl.google.com/android/repository/android-ndk-r29-linux.zip" -o ndk.zip
+          unzip -q ndk.zip
+          mkdir -p prebuilts/ndk
+          mv android-ndk-* prebuilts/ndk/r29
+          rm ndk.zip
 
       - name: Inject NDK r29 & Platform SDK 35
         working-directory: workspace
