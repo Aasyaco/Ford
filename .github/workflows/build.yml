@@ -153,11 +153,12 @@ jobs:
       - name: Inject AOSP Dependency Repositories & Sysroot
         working-directory: workspace
         run: |
-          # 1. Clone lightweight external mirrors for zstd and libxml2
+          # 1. Clone lightweight external mirrors for zstd, libxml2, and toolchain-utils
           echo "=== Cloning External Dependencies ==="
           mkdir -p external
           git clone --depth 1 https://android.googlesource.com/platform/external/zstd external/zstd
           git clone --depth 1 https://android.googlesource.com/platform/external/libxml2 external/libxml2
+          git clone --depth 1 https://android.googlesource.com/platform/external/toolchain-utils external/toolchain-utils
           
           # 2. Redirect expected glibc sysroot compile queries directly to the native host sysroot
           echo "=== Setting up Native Sysroot Redirection ==="
