@@ -168,7 +168,7 @@ jobs:
       - name: Inject AOSP Dependency Repositories & Sysroot
         working-directory: workspace
         run: |
-          # 1. Clone lightweight external mirrors for zstd, libxml2, and toolchain-utils
+          # 1. Clone lightweight external mirrors for zstd, libxml2, and toolchain-utils [1, 2]
           echo "=== Cloning External Dependencies ==="
           mkdir -p external
           git clone --depth 1 https://android.googlesource.com/platform/external/zstd external/zstd
@@ -295,7 +295,7 @@ jobs:
               with open(path, 'w') as fh:
                   fh.write(content)
 
-          # 3. Patch configs.py LinuxConfig fields
+          # 3. Patch configs.py LinuxConfig fields (including is_musl = False)
           path = 'toolchain/llvm_android/src/llvm_android/configs.py'
           if os.path.exists(path):
               print(f'Patching LinuxConfig in {path}')
@@ -304,6 +304,8 @@ jobs:
               content = re.sub(r'sysroot\s*:\s*Optional\[Path\]\s*=\s*[^\n]+', \"sysroot: Optional[Path] = Path('/')\", content)
               content = re.sub(r'gcc_root\s*:\s*Path\s*=\s*[^\n]+', \"gcc_root: Path = Path('/')\", content)
               content = re.sub(r'gcc_triple\s*:\s*str\s*=\s*[^\n]+', \"gcc_triple: str = 'aarch64-linux'\", content)
+              # Set is_musl = False to target standard host glibc [1]
+              content = re.sub(r'is_musl\s*:\s*bool\s*=\s*[^\n]+', \"is_musl: bool = False\", content)
               with open(path, 'w') as fh:
                   fh.write(content)
 
@@ -358,7 +360,8 @@ jobs:
           # Both --skip-source-setup and --skip-apply-patches are OMITTED.
           # This triggers do_build.py to run the default source setup and apply 
           # all of Google's critical Android patches on top of your checked-out commit.
-          BUILD_FLAGS="--no-build windows --skip-tests"
+          # --no-musl explicitly instructs the builder to configure the build with glibc.
+          BUILD_FLAGS="--no-build windows --skip-tests --no-musl"
           if [ "${{ github.event.inputs.enable_lto }}" = "true" ]; then
             BUILD_FLAGS="$BUILD_FLAGS --lto"
           fi
