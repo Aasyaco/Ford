@@ -150,10 +150,25 @@ jobs:
           done
           set -e
 
+          echo "=== Generating Hermetic CMAKE_MAKE_PROGRAM / Ninja paths ==="
+          # This specifically fixes the missing CMAKE_MAKE_PROGRAM ninja executable paths
+          # It symlinks the host native ninja directly into the target directories
+          for dir in prebuilts/build-tools/linux_musl-x86/bin prebuilts/build-tools/linux-x86/bin prebuilts/build-tools/linux-arm64/bin prebuilts/build-tools/linux_musl-arm64/bin; do
+            mkdir -p "$dir"
+            set +e
+            for tool in ninja cmake python3 python bison flex m4; do
+              TOOL_PATH=$(command -v "$tool")
+              if [ -n "$TOOL_PATH" ]; then
+                ln -sf "$TOOL_PATH" "$dir/$tool"
+              fi
+            done
+            set -e
+          done
+
       - name: Inject AOSP Dependency Repositories & Sysroot
         working-directory: workspace
         run: |
-          # 1. Clone lightweight external mirrors for zstd, libxml2, and toolchain-utils
+          # 1. Clone lightweight external mirrors for zstd, libxml2, and toolchain-utils [1, 2]
           echo "=== Cloning External Dependencies ==="
           mkdir -p external
           git clone --depth 1 https://android.googlesource.com/platform/external/zstd external/zstd
