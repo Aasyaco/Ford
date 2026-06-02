@@ -367,6 +367,16 @@ jobs:
           echo "=== Fetching specified commit: ${{ github.event.inputs.llvm_commit }} ==="
           git fetch --depth 1 origin ${{ github.event.inputs.llvm_commit }}
           git checkout FETCH_HEAD
+          
+          # Patch Google Benchmark CMake file to ignore C2y extension errors on Clang 22 [2]
+          # Removes strict '-pedantic-errors' and injects compiler options to bypass C2y diagnostic failures [2]
+          cd ../..
+          BENCHMARK_CMAKE="toolchain/llvm-project/third-party/benchmark/CMakeLists.txt"
+          if [ -f "$BENCHMARK_CMAKE" ]; then
+            echo "=== Patching Google Benchmark CMake compilation flags ==="
+            sed -i 's/-pedantic-errors//g' "$BENCHMARK_CMAKE"
+            sed -i 's/add_cxx_compiler_flag(-pedantic)/add_cxx_compiler_flag(-pedantic)\n  add_cxx_compiler_flag(-Wno-c2y-extensions)\n  add_cxx_compiler_flag(-Wno-error=c2y-extensions)/g' "$BENCHMARK_CMAKE"
+          fi
 
       - name: Compile Custom Android Clang Toolchain (ARM64 Host)
         working-directory: workspace
