@@ -336,6 +336,26 @@ jobs:
                           print(f'Swapping architectures in: {file_path}')
                           with open(file_path, 'w') as fh:
                               fh.write(content)
+
+          # 5. Patch the bootstrap Clang compiler\'s libc++ headers for glibc compatibility
+          # This sweeps the prebuilt compiler\'s headers and maps musl <bits/alltypes.h> back to POSIX <wchar.h>
+          bootstrap_clang_headers = 'prebuilts/clang/host/linux-arm64/clang-r596125/include/c++/v1'
+          if os.path.exists(bootstrap_clang_headers):
+              print(\"=== Patching bootstrap Clang libc++ headers for glibc compatibility ===\")
+              for root, dirs, files in os.walk(bootstrap_clang_headers):
+                  for f in files:
+                      file_path = os.path.join(root, f)
+                      try:
+                          with open(file_path, \'r\', errors=\'ignore\') as fh:
+                              orig_hdr = fh.read()
+                          if \'bits/alltypes.h\' in orig_hdr:
+                              print(f\'Replacing bits/alltypes.h with wchar.h in: {file_path}\')
+                              hdr_content = orig_hdr.replace(\'<bits/alltypes.h>\', \'<wchar.h>\')
+                              hdr_content = hdr_content.replace(\'\"bits/alltypes.h\"\', \'<wchar.h>\')
+                              with open(file_path, \'w\') as fh:
+                                  fh.write(hdr_content)
+                      except Exception as e:
+                          print(f\'Skipping header {file_path} due to read/write error: {e}\')
           "
 
       - name: Inject Custom LLVM Source Git Repo
