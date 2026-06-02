@@ -218,113 +218,102 @@ jobs:
       - name: Patch Build Scripts for Custom Versions and Native ARM64 compilation
         working-directory: workspace
         run: |
-          # Python sweeps the scripts and replaces compile values dynamically
-          echo "=== Patching bootstrap clang version to clang-r596125 ==="
-          python3 -c "
-          import os, re
+          # Write the Python patching script cleanly to a temporary file via heredoc [1]
+          # This avoids any syntax issues from nested shell quote-escapes
+          cat << 'EOF' > patch_script.py
+          import os
+          import re
+
+          print("=== Starting Unified Toolchain Patching ===")
+
+          # 1. Patch bootstrap Clang Version to clang-r596125
           for root, dirs, files in os.walk('toolchain/llvm_android'):
               for f in files:
                   if f.endswith('.py'):
                       path = os.path.join(root, f)
-                      with open(path, 'r') as fh:
+                      with open(path, 'r', errors='ignore') as fh:
                           content = fh.read()
                       if 'CLANG_PREBUILT_VERSION' in content:
                           print(f'Patching CLANG_PREBUILT_VERSION in {path}')
-                          content = re.sub(r'CLANG_PREBUILT_VERSION\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'CLANG_PREBUILT_VERSION = \"clang-r596125\"', content)
-                          content = re.sub(r'CLANG_PREBUILT_VERSION\s*:\s*str\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'CLANG_PREBUILT_VERSION: str = \"clang-r596125\"', content)
+                          content = re.sub(r'CLANG_PREBUILT_VERSION\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'CLANG_PREBUILT_VERSION = "clang-r596125"', content)
+                          content = re.sub(r'CLANG_PREBUILT_VERSION\s*:\s*str\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'CLANG_PREBUILT_VERSION: str = "clang-r596125"', content)
                           with open(path, 'w') as fh:
                               fh.write(content)
-          "
 
-          echo "=== Patching NDK version to r29 ==="
-          python3 -c "
-          import os, re
+          # 2. Patch NDK Version to r29
           for root, dirs, files in os.walk('toolchain/llvm_android'):
               for f in files:
                   if f.endswith('.py'):
                       path = os.path.join(root, f)
-                      with open(path, 'r') as fh:
+                      with open(path, 'r', errors='ignore') as fh:
                           content = fh.read()
                       if 'NDK_VERSION' in content:
                           print(f'Patching NDK_VERSION in {path}')
-                          content = re.sub(r'NDK_VERSION\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'NDK_VERSION = \"r29\"', content)
-                          content = re.sub(r'NDK_VERSION\s*:\s*str\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'NDK_VERSION: str = \"r29\"', content)
+                          content = re.sub(r'NDK_VERSION\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'NDK_VERSION = "r29"', content)
+                          content = re.sub(r'NDK_VERSION\s*:\s*str\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'NDK_VERSION: str = "r29"', content)
                           with open(path, 'w') as fh:
                               fh.write(content)
-          "
 
-          echo "=== Patching SDK version to 35 ==="
-          python3 -c "
-          import os, re
+          # 3. Patch SDK Version to 35
           for root, dirs, files in os.walk('toolchain/llvm_android'):
               for f in files:
                   if f.endswith('.py'):
                       path = os.path.join(root, f)
-                      with open(path, 'r') as fh:
+                      with open(path, 'r', errors='ignore') as fh:
                           content = fh.read()
                       if 'SDK_VERSION' in content or 'PLATFORM_SDK_VERSION' in content:
                           print(f'Patching SDK_VERSION in {path}')
-                          content = re.sub(r'SDK_VERSION\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'SDK_VERSION = \"35\"', content)
+                          content = re.sub(r'SDK_VERSION\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'SDK_VERSION = "35"', content)
                           content = re.sub(r'SDK_VERSION\s*=\s*[0-9]+', 'SDK_VERSION = 35', content)
                           content = re.sub(r'PLATFORM_SDK_VERSION\s*=\s*[0-9]+', 'PLATFORM_SDK_VERSION = 35', content)
                           with open(path, 'w') as fh:
                               fh.write(content)
-          "
 
-          echo "=== Patching llvm_android orchestrator for native ARM64 host builds ==="
-          python3 -c "
-          import os, re
-
-          # 1. Patch py3_utils.py host tag
+          # 4. Patch py3_utils.py host tag
           path = 'toolchain/llvm_android/py3_utils.py'
           if os.path.exists(path):
               print(f'Patching get_host_tag in {path}')
               with open(path, 'r') as fh:
                   content = fh.read()
-              content = content.replace(\"return 'linux-x86'\", \"return 'linux-arm64'\")
+              content = content.replace("return 'linux-x86'", "return 'linux-arm64'")
               with open(path, 'w') as fh:
                   fh.write(content)
 
-          # 2. Patch hosts.py Linux Host mapping
+          # 5. Patch hosts.py Linux Host mapping
           path = 'toolchain/llvm_android/src/llvm_android/hosts.py'
           if os.path.exists(path):
               print(f'Patching Host.Linux tag mapping in {path}')
               with open(path, 'r') as fh:
                   content = fh.read()
-              content = re.sub(r'Host\.Linux\s*:\s*[\'\" ]linux-x86[\'\"]', \"Host.Linux: 'linux-arm64'\", content)
+              content = re.sub(r'Host\.Linux\s*:\s*[\'\" ]linux-x86[\'\"]', "Host.Linux: 'linux-arm64'", content)
               with open(path, 'w') as fh:
                   fh.write(content)
 
-          # 3. Patch configs.py LinuxConfig fields (including is_musl = False)
+          # 6. Patch configs.py LinuxConfig fields (including is_musl = False)
           path = 'toolchain/llvm_android/src/llvm_android/configs.py'
           if os.path.exists(path):
               print(f'Patching LinuxConfig in {path}')
               with open(path, 'r') as fh:
                   content = fh.read()
-              content = re.sub(r'sysroot\s*:\s*Optional\[Path\]\s*=\s*[^\n]+', \"sysroot: Optional[Path] = Path('/')\", content)
-              content = re.sub(r'gcc_root\s*:\s*Path\s*=\s*[^\n]+', \"gcc_root: Path = Path('/')\", content)
-              content = re.sub(r'gcc_triple\s*:\s*str\s*=\s*[^\n]+', \"gcc_triple: str = 'aarch64-linux'\", content)
-              # Set is_musl = False to target standard host glibc [1]
-              content = re.sub(r'is_musl\s*:\s*bool\s*=\s*[^\n]+', \"is_musl: bool = False\", content)
+              content = re.sub(r'sysroot\s*:\s*Optional\[Path\]\s*=\s*[^\n]+', "sysroot: Optional[Path] = Path('/')", content)
+              content = re.sub(r'gcc_root\s*:\s*Path\s*=\s*[^\n]+', "gcc_root: Path = Path('/')", content)
+              content = re.sub(r'gcc_triple\s*:\s*str\s*=\s*[^\n]+', "gcc_triple: str = 'aarch64-linux'", content)
+              content = re.sub(r'is_musl\s*:\s*bool\s*=\s*[^\n]+', "is_musl: bool = False", content)
               with open(path, 'w') as fh:
                   fh.write(content)
 
-          # 4. Global recursive sweep to replace x86 instruction sets and host search triples
+          # 7. Global recursive sweep to replace x86 instruction sets and host search triples
           print('=== Initiating global codebase architecture sweep ===')
           for root, dirs, files in os.walk('toolchain/llvm_android'):
               for f in files:
                   if f.endswith('.py'):
                       file_path = os.path.join(root, f)
-                      with open(file_path, 'r') as fh:
+                      with open(file_path, 'r', errors='ignore') as fh:
                           orig_content = fh.read()
                       
                       content = orig_content
-                      
-                      # Change x86 architecture flags to arm64 equivalent (armv8-a)
                       if 'x86-64-v2' in content:
                           content = content.replace('x86-64-v2', 'armv8-a')
-                      
-                      # Map compiler runtime lookups to native arm64 search directories
                       if 'x86_64-unknown-linux-gnu' in content:
                           content = content.replace('x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu')
                       if 'x86_64-unknown-linux-musl' in content:
@@ -337,26 +326,31 @@ jobs:
                           with open(file_path, 'w') as fh:
                               fh.write(content)
 
-          # 5. Patch the bootstrap Clang compiler\'s libc++ headers for glibc compatibility
-          # This sweeps the prebuilt compiler\'s headers and maps musl <bits/alltypes.h> back to POSIX <wchar.h>
+          # 8. Patch the bootstrap Clang compiler\'s libc++ headers for glibc compatibility
           bootstrap_clang_headers = 'prebuilts/clang/host/linux-arm64/clang-r596125/include/c++/v1'
           if os.path.exists(bootstrap_clang_headers):
-              print(\"=== Patching bootstrap Clang libc++ headers for glibc compatibility ===\")
+              print("=== Patching bootstrap Clang libc++ headers for glibc compatibility ===")
               for root, dirs, files in os.walk(bootstrap_clang_headers):
                   for f in files:
                       file_path = os.path.join(root, f)
                       try:
-                          with open(file_path, \'r\', errors=\'ignore\') as fh:
+                          with open(file_path, 'r', errors='ignore') as fh:
                               orig_hdr = fh.read()
-                          if \'bits/alltypes.h\' in orig_hdr:
-                              print(f\'Replacing bits/alltypes.h with wchar.h in: {file_path}\')
-                              hdr_content = orig_hdr.replace(\'<bits/alltypes.h>\', \'<wchar.h>\')
-                              hdr_content = hdr_content.replace(\'\"bits/alltypes.h\"\', \'<wchar.h>\')
-                              with open(file_path, \'w\') as fh:
+                          if 'bits/alltypes.h' in orig_hdr:
+                              print(f'Replacing bits/alltypes.h with wchar.h in: {file_path}')
+                              hdr_content = orig_hdr.replace('<bits/alltypes.h>', '<wchar.h>')
+                              hdr_content = hdr_content.replace('"bits/alltypes.h"', '<wchar.h>')
+                              with open(file_path, 'w') as fh:
                                   fh.write(hdr_content)
                       except Exception as e:
-                          print(f\'Skipping header {file_path} due to read/write error: {e}\')
-          "
+                          print(f'Skipping header {file_path} due to error: {e}')
+
+          print("=== Unified Toolchain Patching Completed Successfully ===")
+          EOF
+          
+          # Execute the patching script cleanly
+          python3 patch_script.py
+          rm patch_script.py
 
       - name: Inject Custom LLVM Source Git Repo
         working-directory: workspace
