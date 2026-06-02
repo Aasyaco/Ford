@@ -168,7 +168,7 @@ jobs:
       - name: Inject AOSP Dependency Repositories & Sysroot
         working-directory: workspace
         run: |
-          # 1. Clone lightweight external mirrors for zstd, libxml2, and toolchain-utils [1, 2]
+          # 1. Clone lightweight external mirrors for zstd, libxml2, and toolchain-utils
           echo "=== Cloning External Dependencies ==="
           mkdir -p external
           git clone --depth 1 https://android.googlesource.com/platform/external/zstd external/zstd
@@ -306,6 +306,34 @@ jobs:
               content = re.sub(r'gcc_triple\s*:\s*str\s*=\s*[^\n]+', \"gcc_triple: str = 'aarch64-linux'\", content)
               with open(path, 'w') as fh:
                   fh.write(content)
+
+          # 4. Global recursive sweep to replace x86 instruction sets and host search triples
+          print('=== Initiating global codebase architecture sweep ===')
+          for root, dirs, files in os.walk('toolchain/llvm_android'):
+              for f in files:
+                  if f.endswith('.py'):
+                      file_path = os.path.join(root, f)
+                      with open(file_path, 'r') as fh:
+                          orig_content = fh.read()
+                      
+                      content = orig_content
+                      
+                      # Change x86 architecture flags to arm64 equivalent (armv8-a)
+                      if 'x86-64-v2' in content:
+                          content = content.replace('x86-64-v2', 'armv8-a')
+                      
+                      # Map compiler runtime lookups to native arm64 search directories
+                      if 'x86_64-unknown-linux-gnu' in content:
+                          content = content.replace('x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu')
+                      if 'x86_64-unknown-linux-musl' in content:
+                          content = content.replace('x86_64-unknown-linux-musl', 'aarch64-unknown-linux-musl')
+                      if 'x86_64-linux-gnu' in content:
+                          content = content.replace('x86_64-linux-gnu', 'aarch64-linux-gnu')
+                      
+                      if content != orig_content:
+                          print(f'Swapping architectures in: {file_path}')
+                          with open(file_path, 'w') as fh:
+                              fh.write(content)
           "
 
       - name: Inject Custom LLVM Source Git Repo
