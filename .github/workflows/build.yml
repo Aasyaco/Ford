@@ -50,6 +50,7 @@ jobs:
             zlib1g-dev \
             libzstd-dev \
             liblzma-dev \
+            libreadline-dev \
             python3 \
             python3-pip \
             unzip \
@@ -76,7 +77,7 @@ jobs:
             https://android.googlesource.com/toolchain/llvm_android \
             workspace/toolchain/llvm_android
 
-          # 2. Clone Google's toolchain/make repository on the specified tools branch
+          # 2. Clone Google's toolchain/make repository on the specified tools branch [1, 2]
           echo "=== Cloning toolchain/make (mirror-goog-main-tools) ==="
           git clone \
             --branch mirror-goog-main-tools \
@@ -184,6 +185,12 @@ jobs:
           git clone --depth 1 --branch main https://android.googlesource.com/platform/external/libxml2 external/libxml2
           git clone --depth 1 --branch main https://android.googlesource.com/platform/external/toolchain-utils external/toolchain-utils
           git clone --depth 1 --branch main https://android.googlesource.com/platform/external/swig external/swig
+          git clone --depth 1 --branch main https://android.googlesource.com/platform/external/ncurses external/ncurses
+          git clone --depth 1 --branch main https://android.googlesource.com/toolchain/xz external/xz
+          git clone --depth 1 --branch main https://android.googlesource.com/platform/external/libedit external/libedit
+          
+          # Create cross-compatibility symlink for xz between toolchain and external sub-paths
+          ln -sf ../external/xz toolchain/xz
           
           # 2. Redirect expected glibc sysroot compile queries directly to the native host sysroot
           echo "=== Setting up Native Sysroot Redirection ==="
@@ -312,7 +319,7 @@ jobs:
               with open(path, 'w') as fh:
                   fh.write(content)
 
-          # 7. Global recursive sweep to replace x86 instruction sets and host search triples [2]
+          # 7. Global recursive sweep to replace x86 instruction sets and host search triples
           print('=== Initiating global codebase architecture sweep ===')
           for root, dirs, files in os.walk('toolchain/llvm_android'):
               for f in files:
@@ -324,7 +331,7 @@ jobs:
                       content = orig_content
                       
                       # Change x86 architecture flags to arm64 equivalent (armv8-a)
-                      # Append -Wno-c2y-extensions -Wno-error=c2y-extensions to globally suppress Clang 22 C2y compiler errors [3]
+                      # Append -Wno-c2y-extensions -Wno-error=c2y-extensions to globally suppress Clang 22 C2y compiler errors
                       if 'x86-64-v2' in content:
                           content = content.replace('x86-64-v2', 'armv8-a -Wno-c2y-extensions -Wno-error=c2y-extensions')
                       
@@ -382,6 +389,16 @@ jobs:
           echo "=== Fetching specified commit: ${{ github.event.inputs.llvm_commit }} ==="
           git fetch --depth 1 origin ${{ github.event.inputs.llvm_commit }}
           git checkout FETCH_HEAD
+          
+          # Patch Google Benchmark CMake file to ignore C2y extension errors on Clang 22 [2]
+          # Removes strict '-pedantic-errors' and injects compiler options to bypass C2y diagnostic failures [2]
+          cd ../..
+          BENCHMARK_CMAKE="toolchain/llvm-project/third-party/benchmark/CMakeLists.txt"
+          if [ -f "$BENCHMARK_CMAKE" ]; then
+            echo "=== Patching Google Benchmark CMake compilation flags ==="
+            sed -i 's/-pedantic-errors//g' "$BENCHMARK_CMAKE"
+            sed -i 's/add_cxx_compiler_flag(-pedantic)/add_cxx_compiler_flag(-pedantic)\n  add_cxx_compiler_flag(-Wno-c2y-extensions)\n  add_cxx_compiler_flag(-Wno-error=c2y-extensions)/g' "$BENCHMARK_CMAKE"
+          fi
 
       - name: Compile Custom Android Clang Toolchain (ARM64 Host)
         working-directory: workspace
