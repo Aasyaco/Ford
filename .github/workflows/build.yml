@@ -77,7 +77,7 @@ jobs:
             https://android.googlesource.com/toolchain/llvm_android \
             workspace/toolchain/llvm_android
 
-          # 2. Clone Google's toolchain/make repository on the specified tools branch [1, 2]
+          # 2. Clone Google's toolchain/make repository on the specified tools branch [1]
           echo "=== Cloning toolchain/make (mirror-goog-main-tools) ==="
           git clone \
             --branch mirror-goog-main-tools \
@@ -178,18 +178,20 @@ jobs:
       - name: Inject AOSP Dependency Repositories & Sysroot
         working-directory: workspace
         run: |
-          # 1. Clone lightweight external mirrors using specified branches to conserve bandwidth/storage [1, 2]
+          # 1. Clone lightweight external mirrors using specified branches [1]
           echo "=== Cloning External Dependencies ==="
           mkdir -p external
           git clone --depth 1 --branch main-kernel https://android.googlesource.com/platform/external/zstd external/zstd
           git clone --depth 1 --branch main https://android.googlesource.com/platform/external/libxml2 external/libxml2
           git clone --depth 1 --branch main https://android.googlesource.com/platform/external/toolchain-utils external/toolchain-utils
           git clone --depth 1 --branch main https://android.googlesource.com/platform/external/swig external/swig
-          git clone --depth 1 --branch main https://android.googlesource.com/platform/external/ncurses external/ncurses
-          git clone --depth 1 --branch main https://android.googlesource.com/toolchain/xz external/xz
           git clone --depth 1 --branch main https://android.googlesource.com/platform/external/libedit external/libedit
+          git clone --depth 1 --branch main https://android.googlesource.com/toolchain/xz external/xz
           
-          # Create cross-compatibility symlink for xz between toolchain and external sub-paths
+          # Target external/libncurses to align with do_build.py expectations [1]
+          git clone --depth 1 --branch main https://android.googlesource.com/platform/external/ncurses external/libncurses
+          
+          # Create cross-compatibility symlink for xz between toolchain and external sub-paths [1]
           ln -sf ../external/xz toolchain/xz
           
           # 2. Redirect expected glibc sysroot compile queries directly to the native host sysroot
