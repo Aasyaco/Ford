@@ -68,13 +68,22 @@ jobs:
           rm -rf workspace
           mkdir -p workspace/toolchain
           
-          # Clone only the main branch of Google's llvm_android repository
+          # 1. Clone only the main branch of Google's llvm_android repository
           git clone \
             --branch main \
             --single-branch \
             --depth 1 \
             https://android.googlesource.com/toolchain/llvm_android \
             workspace/toolchain/llvm_android
+
+          # 2. Clone Google's toolchain/make repository on the specified tools branch
+          echo "=== Cloning toolchain/make (mirror-goog-main-tools) ==="
+          git clone \
+            --branch mirror-goog-main-tools \
+            --single-branch \
+            --depth 1 \
+            https://android.googlesource.com/toolchain/make \
+            workspace/toolchain/make
 
       - name: Inject Custom Linux-ARM64 Google Prebuilts via Git Clone
         working-directory: workspace
@@ -150,13 +159,13 @@ jobs:
           done
           set -e
 
-          echo "=== Generating Hermetic CMAKE_MAKE_PROGRAM / Ninja paths ==="
-          # This specifically fixes the missing CMAKE_MAKE_PROGRAM ninja executable paths
-          # It symlinks the host native ninja directly into the target directories
+          echo "=== Generating Hermetic CMAKE_MAKE_PROGRAM / Ninja / Make paths ==="
+          # Symlinks the host native binaries directly into target directories
+          # 'make' is explicitly added here to support dependency compilations like SWIG [1]
           for dir in prebuilts/build-tools/linux_musl-x86/bin prebuilts/build-tools/linux-x86/bin prebuilts/build-tools/linux-arm64/bin prebuilts/build-tools/linux_musl-arm64/bin; do
             mkdir -p "$dir"
             set +e
-            for tool in ninja cmake python3 python bison flex m4; do
+            for tool in ninja cmake python3 python bison flex m4 make; do
               TOOL_PATH=$(command -v "$tool")
               if [ -n "$TOOL_PATH" ]; then
                 ln -sf "$TOOL_PATH" "$dir/$tool"
@@ -303,7 +312,7 @@ jobs:
               with open(path, 'w') as fh:
                   fh.write(content)
 
-          # 7. Global recursive sweep to replace x86 instruction sets and host search triples
+          # 7. Global recursive sweep to replace x86 instruction sets and host search triples [2]
           print('=== Initiating global codebase architecture sweep ===')
           for root, dirs, files in os.walk('toolchain/llvm_android'):
               for f in files:
