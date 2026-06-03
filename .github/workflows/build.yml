@@ -168,12 +168,13 @@ jobs:
       - name: Inject AOSP Dependency Repositories & Sysroot
         working-directory: workspace
         run: |
-          # 1. Clone lightweight external mirrors for zstd, libxml2, and toolchain-utils
+          # 1. Clone lightweight external mirrors using specified branches to conserve bandwidth/storage [1, 2]
           echo "=== Cloning External Dependencies ==="
           mkdir -p external
-          git clone --depth 1 https://android.googlesource.com/platform/external/zstd external/zstd
-          git clone --depth 1 https://android.googlesource.com/platform/external/libxml2 external/libxml2
-          git clone --depth 1 https://android.googlesource.com/platform/external/toolchain-utils external/toolchain-utils
+          git clone --depth 1 --branch main-kernel https://android.googlesource.com/platform/external/zstd external/zstd
+          git clone --depth 1 --branch main https://android.googlesource.com/platform/external/libxml2 external/libxml2
+          git clone --depth 1 --branch main https://android.googlesource.com/platform/external/toolchain-utils external/toolchain-utils
+          git clone --depth 1 --branch main https://android.googlesource.com/platform/external/swig external/swig
           
           # 2. Redirect expected glibc sysroot compile queries directly to the native host sysroot
           echo "=== Setting up Native Sysroot Redirection ==="
@@ -314,7 +315,7 @@ jobs:
                       content = orig_content
                       
                       # Change x86 architecture flags to arm64 equivalent (armv8-a)
-                      # Append -Wno-c2y-extensions -Wno-error=c2y-extensions to globally suppress Clang 22 C2y compiler errors [2]
+                      # Append -Wno-c2y-extensions -Wno-error=c2y-extensions to globally suppress Clang 22 C2y compiler errors [3]
                       if 'x86-64-v2' in content:
                           content = content.replace('x86-64-v2', 'armv8-a -Wno-c2y-extensions -Wno-error=c2y-extensions')
                       
