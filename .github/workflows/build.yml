@@ -168,7 +168,7 @@ jobs:
       - name: Inject AOSP Dependency Repositories & Sysroot
         working-directory: workspace
         run: |
-          # 1. Clone lightweight external mirrors for zstd, libxml2, and toolchain-utils [1, 2]
+          # 1. Clone lightweight external mirrors for zstd, libxml2, and toolchain-utils
           echo "=== Cloning External Dependencies ==="
           mkdir -p external
           git clone --depth 1 https://android.googlesource.com/platform/external/zstd external/zstd
@@ -218,7 +218,7 @@ jobs:
       - name: Patch Build Scripts for Custom Versions and Native ARM64 compilation
         working-directory: workspace
         run: |
-          # Write the Python patching script cleanly to a temporary file via heredoc [1]
+          # Write the Python patching script cleanly to a temporary file via heredoc
           # This avoids any syntax issues from nested shell quote-escapes
           cat << 'EOF' > patch_script.py
           import os
@@ -312,8 +312,13 @@ jobs:
                           orig_content = fh.read()
                       
                       content = orig_content
+                      
+                      # Change x86 architecture flags to arm64 equivalent (armv8-a)
+                      # Append -Wno-c2y-extensions -Wno-error=c2y-extensions to globally suppress Clang 22 C2y compiler errors [2]
                       if 'x86-64-v2' in content:
-                          content = content.replace('x86-64-v2', 'armv8-a')
+                          content = content.replace('x86-64-v2', 'armv8-a -Wno-c2y-extensions -Wno-error=c2y-extensions')
+                      
+                      # Map compiler runtime lookups to native arm64 search directories
                       if 'x86_64-unknown-linux-gnu' in content:
                           content = content.replace('x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu')
                       if 'x86_64-unknown-linux-musl' in content:
@@ -367,16 +372,6 @@ jobs:
           echo "=== Fetching specified commit: ${{ github.event.inputs.llvm_commit }} ==="
           git fetch --depth 1 origin ${{ github.event.inputs.llvm_commit }}
           git checkout FETCH_HEAD
-          
-          # Patch Google Benchmark CMake file to ignore C2y extension errors on Clang 22 [2]
-          # Removes strict '-pedantic-errors' and injects compiler options to bypass C2y diagnostic failures [2]
-          cd ../..
-          BENCHMARK_CMAKE="toolchain/llvm-project/third-party/benchmark/CMakeLists.txt"
-          if [ -f "$BENCHMARK_CMAKE" ]; then
-            echo "=== Patching Google Benchmark CMake compilation flags ==="
-            sed -i 's/-pedantic-errors//g' "$BENCHMARK_CMAKE"
-            sed -i 's/add_cxx_compiler_flag(-pedantic)/add_cxx_compiler_flag(-pedantic)\n  add_cxx_compiler_flag(-Wno-c2y-extensions)\n  add_cxx_compiler_flag(-Wno-error=c2y-extensions)/g' "$BENCHMARK_CMAKE"
-          fi
 
       - name: Compile Custom Android Clang Toolchain (ARM64 Host)
         working-directory: workspace
