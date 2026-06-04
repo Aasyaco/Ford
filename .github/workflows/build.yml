@@ -128,6 +128,15 @@ jobs:
       - name: Create Compatibility Symlinks & Hermetic Path wrappers
         working-directory: workspace
         run: |
+          echo "=== Cloning platform/prebuilts/build-tools (Single Branch, Depth 1) ==="
+          # Google's runtimes require the full sysroots and metadata structure inside this repository [3]
+          git clone \
+            --branch main \
+            --single-branch \
+            --depth 1 \
+            https://android.googlesource.com/platform/prebuilts/build-tools \
+            prebuilts/build-tools
+
           echo "=== Setting up prebuilts architecture fallback symlinks ==="
           # Point linux-x86 requests natively to the linux-arm64 prebuilt folders we cloned
           # Clear any existing directories first to ensure symlinks are clean (not nested)
@@ -144,8 +153,8 @@ jobs:
           rm -rf prebuilts/ninja/linux-x86
           ln -sf linux-arm64 prebuilts/ninja/linux-x86
 
-          echo "=== Generating Mock Hermetic Build-Tools for python3 and shell utilities ==="
-          # Creates simulated hermetic folders so that get_host_tag() finds native system utilities
+          echo "=== Overwriting and Symlinking Mock Hermetic Path wrappers with Host Utilities ==="
+          # We clean and override the path directories to ensure native ARM64 executables are executed
           mkdir -p prebuilts/build-tools/path/linux-x86
           mkdir -p prebuilts/build-tools/path/linux-arm64
           
@@ -154,6 +163,8 @@ jobs:
           for tool in python3 python awk cat cp sed touch uname tar zip unzip make bison flex m4 ninja cmake clang lld; do
             TOOL_PATH=$(command -v "$tool")
             if [ -n "$TOOL_PATH" ]; then
+              rm -f "prebuilts/build-tools/path/linux-x86/$tool"
+              rm -f "prebuilts/build-tools/path/linux-arm64/$tool"
               ln -sf "$TOOL_PATH" prebuilts/build-tools/path/linux-x86/$tool
               ln -sf "$TOOL_PATH" prebuilts/build-tools/path/linux-arm64/$tool
             fi
@@ -161,14 +172,14 @@ jobs:
           set -e
 
           echo "=== Generating Hermetic CMAKE_MAKE_PROGRAM / Ninja / Make paths ==="
-          # Symlinks the host native binaries directly into target directories
-          # 'make' is explicitly added here to support dependency compilations like SWIG [1]
+          # Clear existing x86_64 prebuilts and override them with native ARM64 host links
           for dir in prebuilts/build-tools/linux_musl-x86/bin prebuilts/build-tools/linux-x86/bin prebuilts/build-tools/linux-arm64/bin prebuilts/build-tools/linux_musl-arm64/bin; do
             mkdir -p "$dir"
             set +e
             for tool in ninja cmake python3 python bison flex m4 make; do
               TOOL_PATH=$(command -v "$tool")
               if [ -n "$TOOL_PATH" ]; then
+                rm -f "$dir/$tool"
                 ln -sf "$TOOL_PATH" "$dir/$tool"
               fi
             done
