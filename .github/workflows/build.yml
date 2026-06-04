@@ -324,7 +324,25 @@ jobs:
           if os.path.exists(path):
               print(f'Patching LinuxConfig in {path}')
               with open(path, 'r') as fh:
-                  content = fh.read()
+                  lines = fh.readlines()
+              
+              in_linux_config = False
+              for i, line in enumerate(lines):
+                  if 'class LinuxConfig' in line:
+                      in_linux_config = True
+                  elif line.startswith('class ') and in_linux_config:
+                      in_linux_config = False
+                  
+                  if in_linux_config:
+                      # Completely remove the host-specific -march flag [1]
+                      # Replace it strictly with our compiler diagnostics flags [1]
+                      if 'x86-64-v2' in line:
+                          lines[i] = line.replace("'-march=x86-64-v2'", "'-Wno-c2y-extensions', '-Wno-error=c2y-extensions'")
+                          lines[i] = lines[i].replace('"-march=x86-64-v2"', '"-Wno-c2y-extensions", "-Wno-error=c2y-extensions"')
+              
+              content = "".join(lines)
+              
+              # Complete other host configs
               content = re.sub(r'sysroot\s*:\s*Optional\[Path\]\s*=\s*[^\n]+', "sysroot: Optional[Path] = Path('/')", content)
               content = re.sub(r'gcc_root\s*:\s*Path\s*=\s*[^\n]+', "gcc_root: Path = Path('/')", content)
               content = re.sub(r'gcc_triple\s*:\s*str\s*=\s*[^\n]+', "gcc_triple: str = 'aarch64-linux'", content)
@@ -332,21 +350,19 @@ jobs:
               with open(path, 'w') as fh:
                   fh.write(content)
 
-          # 7. Global recursive sweep to replace x86 instruction sets and host search triples
+          # 7. Global recursive sweep of target search triples (excluding x86-64-v2 to prevent target builtin compilation failures)
           print('=== Initiating global codebase architecture sweep ===')
           for root, dirs, files in os.walk('toolchain/llvm_android'):
               for f in files:
                   if f.endswith('.py'):
                       file_path = os.path.join(root, f)
+                      # Skip configs.py since we patched it surgically in step 6
+                      if 'configs.py' in file_path:
+                          continue
                       with open(file_path, 'r', errors='ignore') as fh:
                           orig_content = fh.read()
                       
                       content = orig_content
-                      
-                      # Change x86 architecture flags to arm64 equivalent (armv8-a)
-                      # Append -Wno-c2y-extensions -Wno-error=c2y-extensions to globally suppress Clang 22 C2y compiler errors
-                      if 'x86-64-v2' in content:
-                          content = content.replace('x86-64-v2', 'armv8-a -Wno-c2y-extensions -Wno-error=c2y-extensions')
                       
                       # Map compiler runtime lookups to native arm64 search directories
                       if 'x86_64-unknown-linux-gnu' in content:
