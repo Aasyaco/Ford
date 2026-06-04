@@ -189,6 +189,13 @@ jobs:
             set -e
           done
 
+          echo "=== Injecting Bootstrap libc++ globally ==="
+          # Copies bootstrap compiler's dynamic libraries directly into /usr/lib to make them
+          # globally available to ld/lld, completely immune to script environment resets [1]
+          # Using '-d' is critical to preserve symbolic link resolutions [1]
+          sudo cp -d prebuilts/clang/host/linux-arm64/clang-r596125/lib/libc++* /usr/lib/
+          sudo ldconfig
+
       - name: Inject AOSP Dependency Repositories & Sysroot
         working-directory: workspace
         run: |
@@ -425,10 +432,6 @@ jobs:
       - name: Compile Custom Android Clang Toolchain (ARM64 Host)
         working-directory: workspace
         run: |
-          # Export library search paths so that stage-1 compiler and compiled binaries can locate the bootstrap libc++.so [1]
-          export LIBRARY_PATH="$(pwd)/prebuilts/clang/host/linux-arm64/clang-r596125/lib:$(pwd)/prebuilts/clang/host/linux-arm64/clang-r596125/lib64:$LIBRARY_PATH"
-          export LD_LIBRARY_PATH="$(pwd)/prebuilts/clang/host/linux-arm64/clang-r596125/lib:$(pwd)/prebuilts/clang/host/linux-arm64/clang-r596125/lib64:$LD_LIBRARY_PATH"
-
           # Both --skip-source-setup and --skip-apply-patches are OMITTED.
           # This triggers do_build.py to run the default source setup and apply 
           # all of Google's critical Android patches on top of your checked-out commit.
