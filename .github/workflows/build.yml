@@ -189,13 +189,6 @@ jobs:
             set -e
           done
 
-          echo "=== Injecting Bootstrap libc++ globally ==="
-          # Copies bootstrap compiler's dynamic libraries directly into /usr/lib to make them
-          # globally available to ld/lld, completely immune to script environment resets [1]
-          # Using '-d' is critical to preserve symbolic link resolutions [1]
-          sudo cp -d prebuilts/clang/host/linux-arm64/clang-r596125/lib/libc++* /usr/lib/
-          sudo ldconfig
-
       - name: Inject AOSP Dependency Repositories & Sysroot
         working-directory: workspace
         run: |
@@ -263,6 +256,7 @@ jobs:
           cat << 'EOF' > patch_script.py
           import os
           import re
+          import shutil
 
           print("=== Starting Unified Toolchain Patching ===")
 
@@ -406,6 +400,43 @@ jobs:
                       except Exception as e:
                           print(f'Skipping header {file_path} due to error: {e}')
 
+          # 9. Dynamic Search and Injection of Bootstrap C++ Standard Libraries [1]
+          # This recursively crawls the bootstrap toolchain directory to find and copy libc++ and libc++abi
+          # shared/static libraries directly to '/usr/lib/', '/usr/lib/aarch64-linux-gnu/', and '/usr/local/lib/' [1].
+          # This dynamic crawl remains robust regardless of whether AOSP places host libraries inside lib/ or lib64/ [1].
+          print("=== Automatically locating and injecting bootstrap libc++ libraries ===")
+          target_dirs = ['/usr/lib', '/usr/lib/aarch64-linux-gnu', '/usr/local/lib']
+          found_any = False
+          if os.path.exists(bootstrap_clang_headers):
+              # Traverse the entire bootstrap clang folder
+              for root, dirs, files in os.walk('prebuilts/clang/host/linux-arm64/clang-r596125'):
+                  if 'lib' in root or 'lib64' in root:
+                      for f in files:
+                          # Match all libc++ and libc++abi files (shared libraries, archives, and symlinks) [1]
+                          if f.startswith('libc++') and (f.endswith('.so') or '.so.' in f or f.endswith('.a') or 'libc++abi' in f):
+                              src_path = os.path.join(root, f)
+                              found_any = True
+                              for target_dir in target_dirs:
+                                  if os.path.exists(target_dir):
+                                      dst_path = os.path.join(target_dir, f)
+                                      try:
+                                          if os.path.lexists(dst_path):
+                                              os.remove(dst_path)
+                                          # Replicate symbolic links dynamically [1]
+                                          if os.path.islink(src_path):
+                                              link_target = os.readlink(src_path)
+                                              os.symlink(link_target, dst_path)
+                                          else:
+                                              shutil.copy2(src_path, dst_path)
+                                      except Exception as e:
+                                          print(f"Skipped copy of {f} to {dst_path} due to: {e}")
+
+          if found_any:
+              print("=== Refreshing System Dynamic Library Cache ===")
+              os.system("sudo ldconfig")
+          else:
+              print("WARNING: No bootstrap C++ standard libraries were found!")
+
           print("=== Unified Toolchain Patching Completed Successfully ===")
           EOF
           
@@ -428,6 +459,16 @@ jobs:
           echo "=== Fetching specified commit: ${{ github.event.inputs.llvm_commit }} ==="
           git fetch --depth 1 origin ${{ github.event.inputs.llvm_commit }}
           git checkout FETCH_HEAD
+          
+          # Patch Google Benchmark CMake file to ignore C2y extension errors on Clang 22 [2]
+          # Removes strict '-pedantic-errors' and injects compiler options to bypass C2y diagnostic failures [2]
+          cd ../..
+          BENCHMARK_CMAKE="toolchain/llvm-project/third-party/benchmark/CMakeLists.txt"
+          if [ -f "$BENCHMARK_CMAKE" ]; then
+            echo "=== Patching Google Benchmark CMake compilation flags ==="
+            sed -i 's/-pedantic-errors//g' "$BENCHMARK_CMAKE"
+            sed -i 's/add_cxx_compiler_flag(-pedantic)/add_cxx_compiler_flag(-pedantic)\n  add_cxx_compiler_flag(-Wno-c2y-extensions)\n  add_cxx_compiler_flag(-Wno-error=c2y-extensions)/g' "$BENCHMARK_CMAKE"
+          fi
 
       - name: Compile Custom Android Clang Toolchain (ARM64 Host)
         working-directory: workspace
