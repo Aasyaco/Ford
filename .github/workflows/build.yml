@@ -26,11 +26,11 @@ jobs:
         run: |
           echo "=== Disk space before cleanup ==="
           df -h
-          
-          # Clean up default virtual environment applications not required for C++ builds
+
+          # Remove default virtual environment components not required for C++ builds
           sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force || true
-          
+
           echo "=== Disk space after cleanup ==="
           df -h
 
@@ -68,11 +68,11 @@ jobs:
 
       - name: Setup Layout & Sync Android Build Scripts
         run: |
-          # Safely clear any residual workspace from previous runs (fixes git exit code 128)
+          # Clear any residual workspace from previous runs (prevents git exit-code 128)
           rm -rf workspace
           mkdir -p workspace/toolchain
-          
-          # 1. Clone only the main branch of Google's llvm_android repository
+
+          # Clone the main branch of Google's llvm_android repository
           git clone \
             --branch main \
             --single-branch \
@@ -80,7 +80,7 @@ jobs:
             https://android.googlesource.com/toolchain/llvm_android \
             workspace/toolchain/llvm_android
 
-          # 2. Clone Google's toolchain/make repository on the specified tools branch [1]
+          # Clone Google's toolchain/make repository on the specified tools branch
           echo "=== Cloning toolchain/make (mirror-goog-main-tools) ==="
           git clone \
             --branch mirror-goog-main-tools \
@@ -92,7 +92,7 @@ jobs:
       - name: Inject Custom Linux-ARM64 Google Prebuilts via Git Clone
         working-directory: workspace
         run: |
-          # 1. Sparse Clone the Clang Prebuilts repo to fetch only the clang-r596125 directory
+          # 1. Sparse-clone the Clang Prebuilts repo to fetch only the clang-r596125 directory
           echo "=== Cloning Clang-r596125 (ARM64) ==="
           git clone \
             --depth 1 \
@@ -101,10 +101,10 @@ jobs:
             --branch mirror-goog-main-llvm-toolchain-source \
             https://android.googlesource.com/platform/prebuilts/clang/host/linux-arm64 \
             prebuilts/clang/host/linux-arm64
-          
+
           (cd prebuilts/clang/host/linux-arm64 && git sparse-checkout set clang-r596125)
 
-          # 2. Shallow Clone CMake (ARM64)
+          # 2. Shallow-clone CMake (ARM64)
           echo "=== Cloning CMake (ARM64) ==="
           git clone \
             --depth 1 \
@@ -112,7 +112,7 @@ jobs:
             https://android.googlesource.com/platform/prebuilts/cmake/linux-arm64 \
             prebuilts/cmake/linux-arm64
 
-          # 3. Shallow Clone Python (ARM64)
+          # 3. Shallow-clone Python (ARM64)
           echo "=== Cloning Python (ARM64) ==="
           git clone \
             --depth 1 \
@@ -120,7 +120,7 @@ jobs:
             https://android.googlesource.com/platform/prebuilts/python/linux-arm64 \
             prebuilts/python/linux-arm64
 
-          # 4. Shallow Clone Ninja (ARM64)
+          # 4. Shallow-clone Ninja (ARM64)
           echo "=== Cloning Ninja (ARM64) ==="
           git clone \
             --depth 1 \
@@ -128,11 +128,10 @@ jobs:
             https://android.googlesource.com/platform/prebuilts/ninja/linux-arm64 \
             prebuilts/ninja/linux-arm64
 
-      - name: Create Compatibility Symlinks & Hermetic Path wrappers
+      - name: Create Compatibility Symlinks & Hermetic Path Wrappers
         working-directory: workspace
         run: |
-          echo "=== Cloning platform/prebuilts/build-tools (Single Branch, Depth 1) ==="
-          # Google's runtimes require the full sysroots and metadata structure inside this repository [3]
+          echo "=== Cloning platform/prebuilts/build-tools ==="
           git clone \
             --branch main \
             --single-branch \
@@ -141,27 +140,26 @@ jobs:
             prebuilts/build-tools
 
           echo "=== Setting up prebuilts architecture fallback symlinks ==="
-          # Point linux-x86 requests natively to the linux-arm64 prebuilt folders we cloned
-          # Clear any existing directories first to ensure symlinks are clean (not nested)
+          # Point linux-x86 requests to the linux-arm64 prebuilt folders we cloned above.
+          # Remove any existing directories first to prevent nested symlinks.
           mkdir -p prebuilts/clang/host
           rm -rf prebuilts/clang/host/linux-x86
           ln -sf linux-arm64 prebuilts/clang/host/linux-x86
-          
+
           rm -rf prebuilts/cmake/linux-x86
           ln -sf linux-arm64 prebuilts/cmake/linux-x86
-          
+
           rm -rf prebuilts/python/linux-x86
           ln -sf linux-arm64 prebuilts/python/linux-x86
-          
+
           rm -rf prebuilts/ninja/linux-x86
           ln -sf linux-arm64 prebuilts/ninja/linux-x86
 
-          echo "=== Overwriting and Symlinking Mock Hermetic Path wrappers with Host Utilities ==="
-          # We clean and override the path directories to ensure native ARM64 executables are executed
+          echo "=== Overwriting hermetic path wrappers with host utilities ==="
           mkdir -p prebuilts/build-tools/path/linux-x86
           mkdir -p prebuilts/build-tools/path/linux-arm64
-          
-          # Temporarily disable exit-on-error (set -e) because command -v/which can return non-zero for missing tools
+
+          # Temporarily disable exit-on-error; command -v returns non-zero for missing tools
           set +e
           for tool in python3 python awk cat cp sed touch uname tar zip unzip make bison flex m4 ninja cmake clang lld; do
             TOOL_PATH=$(command -v "$tool")
@@ -174,9 +172,12 @@ jobs:
           done
           set -e
 
-          echo "=== Generating Hermetic CMAKE_MAKE_PROGRAM / Ninja / Make paths ==="
-          # Clear existing x86_64 prebuilts and override them with native ARM64 host links
-          for dir in prebuilts/build-tools/linux_musl-x86/bin prebuilts/build-tools/linux-x86/bin prebuilts/build-tools/linux-arm64/bin prebuilts/build-tools/linux_musl-arm64/bin; do
+          echo "=== Generating hermetic cmake/ninja/make paths ==="
+          for dir in \
+            prebuilts/build-tools/linux_musl-x86/bin \
+            prebuilts/build-tools/linux-x86/bin \
+            prebuilts/build-tools/linux-arm64/bin \
+            prebuilts/build-tools/linux_musl-arm64/bin; do
             mkdir -p "$dir"
             set +e
             for tool in ninja cmake python3 python bison flex m4 make; do
@@ -192,116 +193,119 @@ jobs:
       - name: Inject AOSP Dependency Repositories & Sysroot
         working-directory: workspace
         run: |
-          # 1. Clone lightweight external mirrors using specified branches [1]
-          echo "=== Cloning External Dependencies ==="
+          echo "=== Cloning external dependencies ==="
           mkdir -p external
-          git clone --depth 1 --branch main-kernel https://android.googlesource.com/platform/external/zstd external/zstd
-          git clone --depth 1 --branch main https://android.googlesource.com/platform/external/libxml2 external/libxml2
-          git clone --depth 1 --branch main https://android.googlesource.com/platform/external/toolchain-utils external/toolchain-utils
-          git clone --depth 1 --branch main https://android.googlesource.com/platform/external/swig external/swig
-          git clone --depth 1 --branch main https://android.googlesource.com/platform/external/libedit external/libedit
-          git clone --depth 1 --branch main https://android.googlesource.com/toolchain/xz external/xz
-          
-          # Target external/libncurses to align with do_build.py expectations [1]
-          git clone --depth 1 --branch main https://android.googlesource.com/platform/external/ncurses external/libncurses
-          
-          # Create cross-compatibility symlink for xz between toolchain and external sub-paths [1]
+          git clone --depth 1 --branch main-kernel  https://android.googlesource.com/platform/external/zstd          external/zstd
+          git clone --depth 1 --branch main         https://android.googlesource.com/platform/external/libxml2       external/libxml2
+          git clone --depth 1 --branch main         https://android.googlesource.com/platform/external/toolchain-utils external/toolchain-utils
+          git clone --depth 1 --branch main         https://android.googlesource.com/platform/external/swig          external/swig
+          git clone --depth 1 --branch main         https://android.googlesource.com/platform/external/libedit       external/libedit
+          git clone --depth 1 --branch main         https://android.googlesource.com/toolchain/xz                    external/xz
+          git clone --depth 1 --branch main         https://android.googlesource.com/platform/external/ncurses       external/libncurses
+
+          # Cross-compatibility symlink expected by do_build.py
           ln -sf ../external/xz toolchain/xz
-          
-          # 2. Redirect expected glibc sysroot compile queries directly to the native host sysroot
-          echo "=== Setting up Native Sysroot Redirection ==="
+
+          echo "=== Redirecting glibc sysroot queries to the native host sysroot ==="
           mkdir -p prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8
-          rm -rf prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot
+          rm -rf  prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot
           ln -sf / prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot
 
       - name: Inject NDK r29 & Platform SDK 35 via SDK Manager
         working-directory: workspace
         run: |
-          # 1. Bootstrap official Android SDK Command Line Tools
-          echo "=== Bootstrapping Android SDK command line tools ==="
+          echo "=== Bootstrapping Android SDK command-line tools ==="
           mkdir -p android-sdk/cmdline-tools
-          
-          curl -L "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -o cmdline-tools.zip
+
+          curl -L "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
+            -o cmdline-tools.zip
           unzip -q cmdline-tools.zip -d android-sdk/cmdline-tools
           mv android-sdk/cmdline-tools/cmdline-tools android-sdk/cmdline-tools/latest
           rm cmdline-tools.zip
-          
-          # Expose sdkmanager variables
+
           export ANDROID_HOME=$(pwd)/android-sdk
           export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
-          
-          # Automatically accept SDK licenses
-          echo "=== Accepting Licenses ==="
+
+          echo "=== Accepting SDK licenses ==="
           yes | sdkmanager --licenses --sdk_root=$ANDROID_HOME
-          
-          # 2. Download exact Platform SDK 35 and NDK r29 (29.0.14206865)
-          echo "=== Installing packages via sdkmanager ==="
+
+          echo "=== Installing Platform SDK 35 and NDK r29 ==="
           sdkmanager --sdk_root=$ANDROID_HOME "platforms;android-35" "ndk;29.0.14206865"
-          
-          # 3. Restructure and map to expected AOSP paths
-          echo "=== Mapping NDK to AOSP prebuilts directory ==="
+
+          echo "=== Mapping NDK to AOSP prebuilts path ==="
           mkdir -p prebuilts/ndk
           mv android-sdk/ndk/29.0.14206865 prebuilts/ndk/r29
-          
-          # Ensure target directory structure exists cleanly
-          echo "=== Mapping SDK 35 to AOSP prebuilts directory ==="
+
+          echo "=== Mapping Platform SDK 35 to AOSP prebuilts path ==="
           mkdir -p prebuilts/sdk/35/public
           cp android-sdk/platforms/android-35/android.jar prebuilts/sdk/35/public/android.jar
 
-      - name: Patch Build Scripts for Custom Versions and Native ARM64 compilation
+      - name: Patch Build Scripts for Custom Versions and Native ARM64 Compilation
         working-directory: workspace
         run: |
-          # Write the Python patching script cleanly to a temporary file via heredoc
-          # This avoids any syntax issues from nested shell quote-escapes
           cat << 'EOF' > patch_script.py
           import os
           import re
           import shutil
 
-          print("=== Starting Unified Toolchain Patching ===")
+          print("=== Starting unified toolchain patching ===")
 
-          # 1. Patch bootstrap Clang Version to clang-r596125
+          # 1. Patch bootstrap Clang version to clang-r596125
           for root, dirs, files in os.walk('toolchain/llvm_android'):
               for f in files:
-                  if f.endswith('.py'):
-                      path = os.path.join(root, f)
-                      with open(path, 'r', errors='ignore') as fh:
-                          content = fh.read()
-                      if 'CLANG_PREBUILT_VERSION' in content:
-                          print(f'Patching CLANG_PREBUILT_VERSION in {path}')
-                          content = re.sub(r'CLANG_PREBUILT_VERSION\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'CLANG_PREBUILT_VERSION = "clang-r596125"', content)
-                          content = re.sub(r'CLANG_PREBUILT_VERSION\s*:\s*str\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'CLANG_PREBUILT_VERSION: str = "clang-r596125"', content)
-                          with open(path, 'w') as fh:
-                              fh.write(content)
+                  if not f.endswith('.py'):
+                      continue
+                  path = os.path.join(root, f)
+                  with open(path, 'r', errors='ignore') as fh:
+                      content = fh.read()
+                  if 'CLANG_PREBUILT_VERSION' not in content:
+                      continue
+                  print(f'Patching CLANG_PREBUILT_VERSION in {path}')
+                  content = re.sub(
+                      r'CLANG_PREBUILT_VERSION\s*=\s*[\'\" ][^\'\"]+[\'\"]',
+                      'CLANG_PREBUILT_VERSION = "clang-r596125"', content)
+                  content = re.sub(
+                      r'CLANG_PREBUILT_VERSION\s*:\s*str\s*=\s*[\'\" ][^\'\"]+[\'\"]',
+                      'CLANG_PREBUILT_VERSION: str = "clang-r596125"', content)
+                  with open(path, 'w') as fh:
+                      fh.write(content)
 
-          # 2. Patch NDK Version to r29
+          # 2. Patch NDK version to r29
           for root, dirs, files in os.walk('toolchain/llvm_android'):
               for f in files:
-                  if f.endswith('.py'):
-                      path = os.path.join(root, f)
-                      with open(path, 'r', errors='ignore') as fh:
-                          content = fh.read()
-                      if 'NDK_VERSION' in content:
-                          print(f'Patching NDK_VERSION in {path}')
-                          content = re.sub(r'NDK_VERSION\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'NDK_VERSION = "r29"', content)
-                          content = re.sub(r'NDK_VERSION\s*:\s*str\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'NDK_VERSION: str = "r29"', content)
-                          with open(path, 'w') as fh:
-                              fh.write(content)
+                  if not f.endswith('.py'):
+                      continue
+                  path = os.path.join(root, f)
+                  with open(path, 'r', errors='ignore') as fh:
+                      content = fh.read()
+                  if 'NDK_VERSION' not in content:
+                      continue
+                  print(f'Patching NDK_VERSION in {path}')
+                  content = re.sub(
+                      r'NDK_VERSION\s*=\s*[\'\" ][^\'\"]+[\'\"]',
+                      'NDK_VERSION = "r29"', content)
+                  content = re.sub(
+                      r'NDK_VERSION\s*:\s*str\s*=\s*[\'\" ][^\'\"]+[\'\"]',
+                      'NDK_VERSION: str = "r29"', content)
+                  with open(path, 'w') as fh:
+                      fh.write(content)
 
-          # 3. Patch SDK Version to 35
+          # 3. Patch SDK version to 35
           for root, dirs, files in os.walk('toolchain/llvm_android'):
               for f in files:
-                  if f.endswith('.py'):
-                      path = os.path.join(root, f)
-                      with open(path, 'r', errors='ignore') as fh:
-                          content = fh.read()
-                      if 'SDK_VERSION' in content or 'PLATFORM_SDK_VERSION' in content:
-                          print(f'Patching SDK_VERSION in {path}')
-                          content = re.sub(r'SDK_VERSION\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'SDK_VERSION = "35"', content)
-                          content = re.sub(r'SDK_VERSION\s*=\s*[0-9]+', 'SDK_VERSION = 35', content)
-                          content = re.sub(r'PLATFORM_SDK_VERSION\s*=\s*[0-9]+', 'PLATFORM_SDK_VERSION = 35', content)
-                          with open(path, 'w') as fh:
-                              fh.write(content)
+                  if not f.endswith('.py'):
+                      continue
+                  path = os.path.join(root, f)
+                  with open(path, 'r', errors='ignore') as fh:
+                      content = fh.read()
+                  if 'SDK_VERSION' not in content and 'PLATFORM_SDK_VERSION' not in content:
+                      continue
+                  print(f'Patching SDK_VERSION in {path}')
+                  content = re.sub(r'SDK_VERSION\s*=\s*[\'\" ][^\'\"]+[\'\"]', 'SDK_VERSION = "35"', content)
+                  content = re.sub(r'SDK_VERSION\s*=\s*[0-9]+',              'SDK_VERSION = 35',   content)
+                  content = re.sub(r'PLATFORM_SDK_VERSION\s*=\s*[0-9]+',     'PLATFORM_SDK_VERSION = 35', content)
+                  with open(path, 'w') as fh:
+                      fh.write(content)
 
           # 4. Patch py3_utils.py host tag
           path = 'toolchain/llvm_android/py3_utils.py'
@@ -313,13 +317,14 @@ jobs:
               with open(path, 'w') as fh:
                   fh.write(content)
 
-          # 5. Patch hosts.py Linux Host mapping
+          # 5. Patch hosts.py Linux host mapping
           path = 'toolchain/llvm_android/src/llvm_android/hosts.py'
           if os.path.exists(path):
               print(f'Patching Host.Linux tag mapping in {path}')
               with open(path, 'r') as fh:
                   content = fh.read()
-              content = re.sub(r'Host\.Linux\s*:\s*[\'\" ]linux-x86[\'\"]', "Host.Linux: 'linux-arm64'", content)
+              content = re.sub(r'Host\.Linux\s*:\s*[\'\" ]linux-x86[\'\"]',
+                               "Host.Linux: 'linux-arm64'", content)
               with open(path, 'w') as fh:
                   fh.write(content)
 
@@ -329,59 +334,53 @@ jobs:
               print(f'Patching LinuxConfig in {path}')
               with open(path, 'r') as fh:
                   lines = fh.readlines()
-              
+
               in_linux_config = False
               for i, line in enumerate(lines):
                   if 'class LinuxConfig' in line:
                       in_linux_config = True
                   elif line.startswith('class ') and in_linux_config:
                       in_linux_config = False
-                  
-                  if in_linux_config:
-                      # Completely remove the host-specific -march flag [1]
-                      # Replace it strictly with our compiler diagnostics flags [1]
-                      if 'x86-64-v2' in line:
-                          lines[i] = line.replace("'-march=x86-64-v2'", "'-Wno-c2y-extensions', '-Wno-error=c2y-extensions'")
-                          lines[i] = lines[i].replace('"-march=x86-64-v2"', '"-Wno-c2y-extensions", "-Wno-error=c2y-extensions"')
-              
+                  if in_linux_config and 'x86-64-v2' in line:
+                      lines[i] = line.replace("'-march=x86-64-v2'",
+                                              "'-Wno-c2y-extensions', '-Wno-error=c2y-extensions'")
+                      lines[i] = lines[i].replace('"-march=x86-64-v2"',
+                                                   '"-Wno-c2y-extensions", "-Wno-error=c2y-extensions"')
+
               content = "".join(lines)
-              
-              # Complete other host configs
-              content = re.sub(r'sysroot\s*:\s*Optional\[Path\]\s*=\s*[^\n]+', "sysroot: Optional[Path] = Path('/')", content)
-              content = re.sub(r'gcc_root\s*:\s*Path\s*=\s*[^\n]+', "gcc_root: Path = Path('/')", content)
-              content = re.sub(r'gcc_triple\s*:\s*str\s*=\s*[^\n]+', "gcc_triple: str = 'aarch64-linux'", content)
-              content = re.sub(r'is_musl\s*:\s*bool\s*=\s*[^\n]+', "is_musl: bool = False", content)
+              content = re.sub(r'sysroot\s*:\s*Optional\[Path\]\s*=\s*[^\n]+',
+                               "sysroot: Optional[Path] = Path('/')", content)
+              content = re.sub(r'gcc_root\s*:\s*Path\s*=\s*[^\n]+',
+                               "gcc_root: Path = Path('/')", content)
+              content = re.sub(r'gcc_triple\s*:\s*str\s*=\s*[^\n]+',
+                               "gcc_triple: str = 'aarch64-linux'", content)
+              content = re.sub(r'is_musl\s*:\s*bool\s*=\s*[^\n]+',
+                               "is_musl: bool = False", content)
               with open(path, 'w') as fh:
                   fh.write(content)
 
-          # 7. Global recursive sweep of target search triples (excluding x86-64-v2 to prevent target builtin compilation failures)
-          print('=== Initiating global codebase architecture sweep ===')
+          # 7. Global recursive sweep of target search triples
+          #    (configs.py is skipped here; it was patched surgically above)
+          print('=== Initiating global architecture triple sweep ===')
           for root, dirs, files in os.walk('toolchain/llvm_android'):
               for f in files:
-                  if f.endswith('.py'):
-                      file_path = os.path.join(root, f)
-                      # Skip configs.py since we patched it surgically in step 6
-                      if 'configs.py' in file_path:
-                          continue
-                      with open(file_path, 'r', errors='ignore') as fh:
-                          orig_content = fh.read()
-                      
-                      content = orig_content
-                      
-                      # Map compiler runtime lookups to native arm64 search directories
-                      if 'x86_64-unknown-linux-gnu' in content:
-                          content = content.replace('x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu')
-                      if 'x86_64-unknown-linux-musl' in content:
-                          content = content.replace('x86_64-unknown-linux-musl', 'aarch64-unknown-linux-musl')
-                      if 'x86_64-linux-gnu' in content:
-                          content = content.replace('x86_64-linux-gnu', 'aarch64-linux-gnu')
-                      
-                      if content != orig_content:
-                          print(f'Swapping architectures in: {file_path}')
-                          with open(file_path, 'w') as fh:
-                              fh.write(content)
+                  if not f.endswith('.py'):
+                      continue
+                  file_path = os.path.join(root, f)
+                  if 'configs.py' in file_path:
+                      continue
+                  with open(file_path, 'r', errors='ignore') as fh:
+                      orig_content = fh.read()
+                  content = orig_content
+                  content = content.replace('x86_64-unknown-linux-gnu',  'aarch64-unknown-linux-gnu')
+                  content = content.replace('x86_64-unknown-linux-musl', 'aarch64-unknown-linux-musl')
+                  content = content.replace('x86_64-linux-gnu',          'aarch64-linux-gnu')
+                  if content != orig_content:
+                      print(f'Swapping architectures in: {file_path}')
+                      with open(file_path, 'w') as fh:
+                          fh.write(content)
 
-          # 8. Patch the bootstrap Clang compiler\'s libc++ headers for glibc compatibility
+          # 8. Patch bootstrap Clang libc++ headers for glibc compatibility
           bootstrap_clang_headers = 'prebuilts/clang/host/linux-arm64/clang-r596125/include/c++/v1'
           if os.path.exists(bootstrap_clang_headers):
               print("=== Patching bootstrap Clang libc++ headers for glibc compatibility ===")
@@ -398,123 +397,155 @@ jobs:
                               with open(file_path, 'w') as fh:
                                   fh.write(hdr_content)
                       except Exception as e:
-                          print(f'Skipping header {file_path} due to error: {e}')
+                          print(f'Skipping header {file_path}: {e}')
 
-          # 9. Dynamic Search and Injection of Bootstrap C++ Standard Libraries [1]
-          # This recursively crawls the bootstrap toolchain directory to find and copy libc++ and libc++abi
-          # shared/static libraries directly to '/usr/lib/', '/usr/lib/aarch64-linux-gnu/', and '/usr/local/lib/' [1].
-          # This dynamic crawl remains robust regardless of whether AOSP places host libraries inside lib/ or lib64/ [1].
-          print("=== Automatically locating and injecting bootstrap libc++ libraries ===")
+          # 9. Dynamically locate and inject bootstrap libc++ libraries into system linker paths
+          print("=== Locating and injecting bootstrap libc++ libraries ===")
           target_dirs = ['/usr/lib', '/usr/lib/aarch64-linux-gnu', '/usr/local/lib']
           found_any = False
-          if os.path.exists(bootstrap_clang_headers):
-              # Traverse the entire bootstrap clang folder
-              for root, dirs, files in os.walk('prebuilts/clang/host/linux-arm64/clang-r596125'):
-                  if 'lib' in root or 'lib64' in root:
-                      for f in files:
-                          # Match all libc++ and libc++abi files (shared libraries, archives, and symlinks) [1]
-                          if f.startswith('libc++') and (f.endswith('.so') or '.so.' in f or f.endswith('.a') or 'libc++abi' in f):
-                              src_path = os.path.join(root, f)
-                              found_any = True
-                              for target_dir in target_dirs:
-                                  if os.path.exists(target_dir):
-                                      dst_path = os.path.join(target_dir, f)
-                                      try:
-                                          if os.path.lexists(dst_path):
-                                              os.remove(dst_path)
-                                          # Replicate symbolic links dynamically [1]
-                                          if os.path.islink(src_path):
-                                              link_target = os.readlink(src_path)
-                                              os.symlink(link_target, dst_path)
-                                          else:
-                                              shutil.copy2(src_path, dst_path)
-                                      except Exception as e:
-                                          print(f"Skipped copy of {f} to {dst_path} due to: {e}")
+          bootstrap_root = 'prebuilts/clang/host/linux-arm64/clang-r596125'
+          if os.path.exists(bootstrap_root):
+              for root, dirs, files in os.walk(bootstrap_root):
+                  if 'lib' not in root and 'lib64' not in root:
+                      continue
+                  for f in files:
+                      if not (f.startswith('libc++') and
+                              (f.endswith('.so') or '.so.' in f or f.endswith('.a') or 'libc++abi' in f)):
+                          continue
+                      src_path = os.path.join(root, f)
+                      found_any = True
+                      for target_dir in target_dirs:
+                          if not os.path.exists(target_dir):
+                              continue
+                          dst_path = os.path.join(target_dir, f)
+                          try:
+                              if os.path.lexists(dst_path):
+                                  os.remove(dst_path)
+                              if os.path.islink(src_path):
+                                  os.symlink(os.readlink(src_path), dst_path)
+                              else:
+                                  shutil.copy2(src_path, dst_path)
+                          except Exception as e:
+                              print(f'Skipped {f} → {dst_path}: {e}')
 
           if found_any:
-              print("=== Refreshing System Dynamic Library Cache ===")
+              print("=== Refreshing system dynamic library cache ===")
               os.system("sudo ldconfig")
           else:
               print("WARNING: No bootstrap C++ standard libraries were found!")
 
-          print("=== Unified Toolchain Patching Completed Successfully ===")
+          print("=== Unified toolchain patching completed successfully ===")
           EOF
-          
-          # Execute the patching script cleanly
+
           python3 patch_script.py
           rm patch_script.py
 
       - name: Inject Custom LLVM Source Git Repo
         working-directory: workspace
         run: |
-          echo "=== Initializing LLVM-Project Repo ==="
+          echo "=== Initializing LLVM-Project repo ==="
           mkdir -p toolchain/llvm-project
           cd toolchain/llvm-project
           git init
-          
-          # Link the Google source remote
           git remote add origin https://android.googlesource.com/toolchain/llvm-project
-          
-          # Fetch only the single specified commit (depth 1) to conserve CI storage
+
           echo "=== Fetching specified commit: ${{ github.event.inputs.llvm_commit }} ==="
           git fetch --depth 1 origin ${{ github.event.inputs.llvm_commit }}
           git checkout FETCH_HEAD
-          
-          # Patch Google Benchmark CMake file to ignore C2y extension errors on Clang 22 [2]
-          # Removes strict '-pedantic-errors' and injects compiler options to bypass C2y diagnostic failures [2]
           cd ../..
+
+          # -----------------------------------------------------------------------
+          # Patch Google Benchmark's CMakeLists.txt for a hermetic Clang-only build.
+          #
+          # Three probes fail in this environment and abort CMake configuration:
+          #
+          #   HAVE_CXX_FLAG_COVERAGE   – requires gcov/--coverage support; our
+          #                              bootstrap Clang has none.
+          #   HAVE_GNU_POSIX_REGEX     – requires <regex.h> GNU extensions
+          #                              (REG_EXTENDED + re_nsub), absent on this
+          #                              glibc configuration.
+          #   HAVE_POSIX_REGEX         – succeeds, but left here for completeness.
+          #
+          # Strategy: cache-force all three variables to their safe values before
+          # Benchmark's own check_cxx_compiler_flag / check_cxx_source_runs calls
+          # run, so CMake never attempts the probes.  Belt-and-suspenders: also
+          # strip -pedantic-errors and unconditionally append the C2y-extension
+          # suppression flags that the bootstrap Clang 22 requires.
+          # -----------------------------------------------------------------------
           BENCHMARK_CMAKE="toolchain/llvm-project/third-party/benchmark/CMakeLists.txt"
           if [ -f "$BENCHMARK_CMAKE" ]; then
-            echo "=== Patching Google Benchmark CMake compilation flags ==="
+            echo "=== Patching Google Benchmark CMakeLists.txt ==="
+
+            # 1. Drop -pedantic-errors (causes hard errors on C2y extensions)
             sed -i 's/-pedantic-errors//g' "$BENCHMARK_CMAKE"
-            sed -i 's/add_cxx_compiler_flag(-pedantic)/add_cxx_compiler_flag(-pedantic)\n  add_cxx_compiler_flag(-Wno-c2y-extensions)\n  add_cxx_compiler_flag(-Wno-error=c2y-extensions)/g' "$BENCHMARK_CMAKE"
+
+            # 2. After any existing -pedantic flag injection, also suppress C2y warnings
+            sed -i 's/add_cxx_compiler_flag(-pedantic)/add_cxx_compiler_flag(-pedantic)\n  add_cxx_compiler_flag(-Wno-c2y-extensions)\n  add_cxx_compiler_flag(-Wno-error=c2y-extensions)/g' \
+              "$BENCHMARK_CMAKE"
+
+            # 3. Cache-force the three probe variables so CMake skips the failing
+            #    feature-detection entirely.  The block is injected at the very top
+            #    of the file so it takes effect before any check_* call.
+            PREAMBLE='# ---- Hermetic ARM64 build: pre-force probe results ----\n'
+            PREAMBLE+='# --coverage is unavailable without gcov; skip the probe.\n'
+            PREAMBLE+='set(HAVE_CXX_FLAG_COVERAGE      OFF CACHE BOOL "" FORCE)\n'
+            PREAMBLE+='# GNU POSIX regex extensions are absent in this glibc config.\n'
+            PREAMBLE+='set(HAVE_GNU_POSIX_REGEX         OFF CACHE BOOL "" FORCE)\n'
+            PREAMBLE+='# Disable Benchmark test suite; prevents further probe failures.\n'
+            PREAMBLE+='set(BENCHMARK_ENABLE_TESTING     OFF CACHE BOOL "" FORCE)\n'
+            PREAMBLE+='set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)\n'
+            PREAMBLE+='# --------------------------------------------------------\n'
+            # Prepend the block before the first cmake_minimum_required line
+            sed -i "1s|^|${PREAMBLE}|" "$BENCHMARK_CMAKE"
+
+            echo "=== Benchmark CMakeLists.txt patched successfully ==="
+          else
+            echo "WARNING: Benchmark CMakeLists.txt not found at expected path; skipping patch."
           fi
 
       - name: Compile Custom Android Clang Toolchain (ARM64 Host)
         working-directory: workspace
         run: |
-          # Both --skip-source-setup and --skip-apply-patches are OMITTED.
-          # This triggers do_build.py to run the default source setup and apply 
-          # all of Google's critical Android patches on top of your checked-out commit.
-          # --no-musl explicitly instructs the builder to configure the build with glibc.
+          # --skip-source-setup and --skip-apply-patches are intentionally omitted:
+          # do_build.py performs default source setup and applies Google's Android
+          # patches on top of the checked-out commit.
+          # --no-musl instructs the builder to configure the build with glibc.
           BUILD_FLAGS="--no-build windows --skip-tests --no-musl"
           if [ "${{ github.event.inputs.enable_lto }}" = "true" ]; then
             BUILD_FLAGS="$BUILD_FLAGS --lto"
           fi
-          
-          # Run compilation using the native configuration parameters
+
           python3 toolchain/llvm_android/build.py $BUILD_FLAGS
 
       - name: Locate, Strip, and Package the Toolchain
         id: packager
         working-directory: workspace
         run: |
-          # Dynamically locate outputs
-          BUILD_OUT=$(find out/install -name "clang-dev" -type d | head -n 1)
+          # Locate build output directory
+          BUILD_OUT=$(find out/install -name "clang-dev"      -type d 2>/dev/null | head -n 1)
+          [ -z "$BUILD_OUT" ] && \
+            BUILD_OUT=$(find out       -name "stage2-install" -type d 2>/dev/null | head -n 1)
+
           if [ -z "$BUILD_OUT" ]; then
-            BUILD_OUT=$(find out -name "stage2-install" -type d | head -n 1)
-          fi
-          
-          if [ -z "$BUILD_OUT" ]; then
-            echo "::error::Could not find build stage2 binaries."
+            echo "::error::Could not find stage2 build output directory."
             exit 1
           fi
-          
-          echo "Located build output directory at: $BUILD_OUT"
-          
-          # Strip symbols to trim binary footprint size
-          find "$BUILD_OUT/bin" "$BUILD_OUT/lib" -type f \( -name "clang*" -o -name "*.so" -o -name "*.a" \) -exec strip --strip-unneeded {} + 2>/dev/null || true
-          
-          # Package final tarball
+          echo "Located build output at: $BUILD_OUT"
+
+          # Strip debug symbols to reduce archive size
+          find "$BUILD_OUT/bin" "$BUILD_OUT/lib" \
+            -type f \( -name "clang*" -o -name "*.so" -o -name "*.a" \) \
+            -exec strip --strip-unneeded {} + 2>/dev/null || true
+
+          # Package the final tarball
           ARCHIVE_NAME="android-clang-arm64-custom-${{ github.event.inputs.llvm_commit }}.tar.xz"
           tar -cJf "$ARCHIVE_NAME" -C "$(dirname "$BUILD_OUT")" "$(basename "$BUILD_OUT")"
-          
-          # Safely register variables into the step's GITHUB_OUTPUT context
+
           echo "archive_path=$(pwd)/$ARCHIVE_NAME" >> "$GITHUB_OUTPUT"
-          echo "archive_name=$ARCHIVE_NAME" >> "$GITHUB_OUTPUT"
+          echo "archive_name=$ARCHIVE_NAME"         >> "$GITHUB_OUTPUT"
 
       - name: Upload Built Toolchain Archive
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.packager.outputs.archive_name }}
           path: ${{ steps.packager.outputs.archive_path }}
